@@ -87,6 +87,13 @@ else
   ok "uv $(uv --version)"
 fi
 
+if command -v docker &>/dev/null && docker mcp --help &>/dev/null; then
+  ok "docker mcp ($(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1))"
+else
+  fail "docker mcp not found — requires Docker Desktop 4.48+ (https://www.docker.com/products/docker-desktop)"
+  ((errors++))
+fi
+
 if command -v gemini &>/dev/null; then
   ok "gemini CLI $(gemini --version 2>&1)"
 else
@@ -106,13 +113,14 @@ SETTINGS="$HOME/.gemini/settings.json"
 NPX_PATH="$(command -v npx)"
 BUNX_PATH="$(command -v bunx)"
 UVX_PATH="$(command -v uvx)"
+DOCKER_PATH="$(command -v docker)"
 
 # Python script that merges reins config into existing settings.json.
 # - Preserves all existing user config (custom MCP servers, other keys)
 # - Only adds missing keys — never overwrites existing MCP server entries
 # - Creates fresh settings.json if none exists
 # - Backs up existing file before writing
-MERGE_RESULT=$(python3 - "$SETTINGS" "${SCRIPT_DIR}/settings.template.json" "$NPX_PATH" "$BUNX_PATH" "$UVX_PATH" <<'PYEOF'
+MERGE_RESULT=$(python3 - "$SETTINGS" "${SCRIPT_DIR}/settings.template.json" "$NPX_PATH" "$BUNX_PATH" "$UVX_PATH" "$DOCKER_PATH" <<'PYEOF'
 import json, sys, os, shutil
 
 settings_path = sys.argv[1]
@@ -120,19 +128,23 @@ template_path = sys.argv[2]
 npx_path = sys.argv[3]
 bunx_path = sys.argv[4]
 uvx_path = sys.argv[5]
+docker_path = sys.argv[6]
 
 # Load template and resolve placeholders
 with open(template_path) as f:
     template = json.load(f)
 
+placeholders = {
+    "__NPX__": npx_path,
+    "__BUNX__": bunx_path,
+    "__UVX__": uvx_path,
+    "__DOCKER__": docker_path,
+}
+
 for server in template.get("mcpServers", {}).values():
     cmd = server.get("command", "")
-    if cmd == "__NPX__":
-        server["command"] = npx_path
-    elif cmd == "__BUNX__":
-        server["command"] = bunx_path
-    elif cmd == "__UVX__":
-        server["command"] = uvx_path
+    if cmd in placeholders:
+        server["command"] = placeholders[cmd]
 
 # Load existing settings or start fresh
 if os.path.exists(settings_path):
@@ -218,9 +230,10 @@ while IFS= read -r line; do
   esac
 done <<< "$MERGE_RESULT"
 
-ok "npx  = ${NPX_PATH}"
-ok "bunx = ${BUNX_PATH}"
-ok "uvx  = ${UVX_PATH}"
+ok "npx    = ${NPX_PATH}"
+ok "bunx   = ${BUNX_PATH}"
+ok "uvx    = ${UVX_PATH}"
+ok "docker = ${DOCKER_PATH}"
 
 # ─── Validate final settings.json ────────────────────────────────────────────
 VALID=$(python3 - "$SETTINGS" <<'PYEOF'
@@ -235,7 +248,7 @@ if not d.get("subagents"):
 if not d.get("experimental", {}).get("enableAgents"):
     errors.append("experimental.enableAgents not set")
 
-required = ["lsp", "hashline", "context7", "sequential-thinking", "playwright"]
+required = ["lsp", "hashline", "context7", "sequential-thinking", "playwright", "docker"]
 servers = d.get("mcpServers", {})
 for s in required:
     if s not in servers:
@@ -324,7 +337,7 @@ for agent in investigator planner reviewer; do
   fi
 done
 
-for tool in hashline__read_file resolve-library-id sequentialthinking browser_navigate; do
+for tool in hashline__read_file resolve-library-id sequentialthinking browser_navigate mcp-exec; do
   if echo "$TOOLS" | grep -qw "$tool"; then
     ok "MCP tool: $tool"
   else

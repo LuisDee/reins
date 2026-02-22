@@ -8,9 +8,9 @@ Instead of one agent doing everything in a single conversation, Reins splits the
 
 | Agent | Role | Key Tools |
 |-------|------|-----------|
-| **investigator** | Deep debugging and root cause analysis. Read-only. | Serena (LSP), Hashline, grep |
+| **investigator** | Deep debugging and root cause analysis. Read-only. | Serena (LSP), Hashline, Docker MCP, grep |
 | **planner** | TDD implementation plans with spec + plan files. | Serena, Context7 (docs), Sequential Thinking |
-| **reviewer** | Reviews implementation against spec/plan. Runs tests. | Serena, Hashline, Playwright (browser), shell |
+| **reviewer** | Reviews implementation against spec/plan. Validates in browser and containers. | Serena, Hashline, Playwright (browser), Docker MCP |
 
 The main Gemini agent orchestrates the workflow: it creates numbered plan directories, delegates to subagents, and persists their outputs. A `current` symlink always points to the active plan so agents never need hardcoded paths.
 
@@ -46,6 +46,7 @@ That's it. The setup script will:
 
 - **macOS** with [Homebrew](https://brew.sh) (Linux support planned)
 - **Node.js** 18+ (`brew install node`)
+- **Docker Desktop** 4.48+ (for Docker MCP — [download](https://www.docker.com/products/docker-desktop))
 - **Gemini CLI** (`npm install -g @google/gemini-cli`)
 
 The setup script will auto-install these if missing:
@@ -109,9 +110,10 @@ If you prefer not to use `setup.sh`, or you're not on macOS:
    which npx    # e.g. /usr/local/bin/npx
    which bunx   # e.g. /usr/local/bin/bunx
    which uvx    # e.g. /usr/local/bin/uvx
+   which docker # e.g. /usr/local/bin/docker
    ```
 
-   Replace `__NPX__`, `__BUNX__`, and `__UVX__` in the template with these paths.
+   Replace `__NPX__`, `__BUNX__`, `__UVX__`, and `__DOCKER__` in the template with these paths.
 
 4. **Install Playwright browsers**:
 
@@ -129,6 +131,7 @@ If you prefer not to use `setup.sh`, or you're not on macOS:
 | [Context7](https://github.com/upstash/context7) | Library documentation lookup | Node |
 | [Sequential Thinking](https://github.com/modelcontextprotocol/servers) | Structured reasoning before planning | Node |
 | [Playwright](https://github.com/anthropics/mcp-playwright) | Browser automation for UI validation | Node |
+| [Docker MCP](https://docs.docker.com/desktop/features/gordon-mcp/) | Container logs, inspection, health checks via MCP protocol | Docker Desktop 4.48+ |
 
 ## Project Structure
 

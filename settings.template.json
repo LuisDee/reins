@@ -41,6 +41,10 @@
     "playwright": {
       "command": "__NPX__",
       "args": ["-y", "@playwright/mcp@0.0.68"]
+    },
+    "docker": {
+      "command": "__DOCKER__",
+      "args": ["mcp", "gateway", "run"]
     }
   }
 }
