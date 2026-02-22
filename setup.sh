@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Reins extension setup — installs all prerequisites and validates the environment.
+# Works on macOS (Homebrew) and Linux (apt/curl).
 #
 # Usage:
 #   git clone https://github.com/LuisDee/reins.git ~/.gemini/extensions/reins
@@ -14,6 +15,7 @@ HASHLINE_VERSION="0.2.0"
 SEQTHINK_VERSION="2025.12.18"
 CONTEXT7_VERSION="2.1.1"
 PLAYWRIGHT_VERSION="0.0.68"
+DOCKER_MCP_VERSION="v0.40.0"
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -30,11 +32,44 @@ step() { echo -e "\n${BLUE}${BOLD}$1${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ─── Detect OS ────────────────────────────────────────────────────────────────
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+case "$OS" in
+  Darwin) PLATFORM="macos" ;;
+  Linux)  PLATFORM="linux" ;;
+  *)      echo "Unsupported OS: $OS"; exit 1 ;;
+esac
+
+# Map architecture names
+case "$ARCH" in
+  x86_64)  GOARCH="amd64" ;;
+  aarch64|arm64) GOARCH="arm64" ;;
+  *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
 echo -e "${BOLD}Reins — Gemini CLI Extension Installer${NC}"
+echo -e "  platform: ${PLATFORM}/${GOARCH}"
 echo ""
 
+# ─── Helper: install a package ────────────────────────────────────────────────
+install_pkg() {
+  local name="$1"
+  shift
+  if [ "$PLATFORM" = "macos" ]; then
+    if ! command -v brew &>/dev/null; then
+      fail "homebrew not found — install from https://brew.sh"
+      return 1
+    fi
+    brew install "$@"
+  else
+    # Linux — caller provides the install command as remaining args
+    "$@"
+  fi
+}
+
 # ─── Link extension if cloned outside ~/.gemini/extensions ───────────────────
-step "[1/7] Linking extension"
+step "[1/8] Linking extension"
 
 EXTENSION_DIR="$HOME/.gemini/extensions/reins"
 if [ "$SCRIPT_DIR" = "$EXTENSION_DIR" ]; then
@@ -53,17 +88,23 @@ else
 fi
 
 # ─── Check prerequisites ─────────────────────────────────────────────────────
-step "[2/7] Checking prerequisites"
+step "[2/8] Checking prerequisites"
 
 errors=0
 
+# Node.js
 if command -v node &>/dev/null; then
   ok "node $(node --version)"
 else
-  fail "node not found — install via: brew install node"
+  if [ "$PLATFORM" = "macos" ]; then
+    fail "node not found — install via: brew install node"
+  else
+    fail "node not found — install via: sudo apt install nodejs npm"
+  fi
   ((errors++))
 fi
 
+# npx
 if command -v npx &>/dev/null; then
   ok "npx $(npx --version)"
 else
@@ -71,29 +112,48 @@ else
   ((errors++))
 fi
 
+# Bun
 if command -v bun &>/dev/null; then
   ok "bun $(bun --version)"
 else
-  warn "bun not found — installing via brew..."
-  brew install oven-sh/bun/bun
+  warn "bun not found — installing..."
+  if [ "$PLATFORM" = "macos" ]; then
+    brew install oven-sh/bun/bun
+  else
+    curl -fsSL https://bun.sh/install | bash
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
+  fi
   ok "bun $(bun --version)"
 fi
 
+# uv
 if command -v uv &>/dev/null; then
   ok "uv $(uv --version)"
 else
-  warn "uv not found — installing via brew..."
-  brew install uv
+  warn "uv not found — installing..."
+  if [ "$PLATFORM" = "macos" ]; then
+    brew install uv
+  else
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
   ok "uv $(uv --version)"
 fi
 
-if command -v docker &>/dev/null && docker mcp --help &>/dev/null; then
-  ok "docker mcp ($(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1))"
+# Docker Engine
+if command -v docker &>/dev/null; then
+  ok "docker $(docker --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 else
-  fail "docker mcp not found — requires Docker Desktop 4.48+ (https://www.docker.com/products/docker-desktop)"
+  if [ "$PLATFORM" = "macos" ]; then
+    fail "docker not found — install Docker Desktop: https://www.docker.com/products/docker-desktop"
+  else
+    fail "docker not found — install via: sudo apt install docker.io"
+  fi
   ((errors++))
 fi
 
+# Gemini CLI
 if command -v gemini &>/dev/null; then
   ok "gemini CLI $(gemini --version 2>&1)"
 else
@@ -106,8 +166,47 @@ if [ "$errors" -gt 0 ]; then
   exit 1
 fi
 
+# ─── Install Docker MCP plugin ──────────────────────────────────────────────
+step "[3/8] Docker MCP plugin"
+
+if docker mcp --help &>/dev/null 2>&1; then
+  ok "docker mcp already installed"
+else
+  warn "docker mcp not found — installing from GitHub releases..."
+  DOCKER_MCP_URL="https://github.com/docker/mcp-gateway/releases/download/${DOCKER_MCP_VERSION}"
+
+  if [ "$PLATFORM" = "macos" ]; then
+    DOCKER_MCP_ARCHIVE="docker-mcp-darwin-${GOARCH}.tar.gz"
+  else
+    DOCKER_MCP_ARCHIVE="docker-mcp-linux-${GOARCH}.tar.gz"
+  fi
+
+  TMPDIR_MCP="$(mktemp -d)"
+  trap "rm -rf '$TMPDIR_MCP'" EXIT
+
+  curl -fsSL "${DOCKER_MCP_URL}/${DOCKER_MCP_ARCHIVE}" -o "${TMPDIR_MCP}/${DOCKER_MCP_ARCHIVE}"
+  tar -xzf "${TMPDIR_MCP}/${DOCKER_MCP_ARCHIVE}" -C "${TMPDIR_MCP}"
+
+  mkdir -p "$HOME/.docker/cli-plugins"
+  mv "${TMPDIR_MCP}/docker-mcp" "$HOME/.docker/cli-plugins/docker-mcp"
+  chmod +x "$HOME/.docker/cli-plugins/docker-mcp"
+
+  # On Linux without Docker Desktop, bypass the Desktop feature check
+  if [ "$PLATFORM" = "linux" ]; then
+    ok "setting DOCKER_MCP_IN_CONTAINER=1 for Docker Engine compatibility"
+    export DOCKER_MCP_IN_CONTAINER=1
+  fi
+
+  if docker mcp --help &>/dev/null 2>&1; then
+    ok "docker mcp installed to ~/.docker/cli-plugins/"
+  else
+    fail "docker mcp install failed — check https://github.com/docker/mcp-gateway"
+    exit 1
+  fi
+fi
+
 # ─── Configure settings.json (merge, don't clobber) ─────────────────────────
-step "[3/7] Configuring settings.json"
+step "[4/8] Configuring settings.json"
 
 SETTINGS="$HOME/.gemini/settings.json"
 NPX_PATH="$(command -v npx)"
@@ -280,7 +379,7 @@ else
 fi
 
 # ─── Pre-cache MCP servers ───────────────────────────────────────────────────
-step "[4/7] Pre-caching MCP servers"
+step "[5/8] Pre-caching MCP servers"
 
 echo -n "  serena@${SERENA_COMMIT:0:8}... "
 uvx --from "git+https://github.com/oraios/serena@${SERENA_COMMIT}" serena --help &>/dev/null && ok "cached" || warn "download may happen on first gemini launch"
@@ -298,7 +397,13 @@ echo -n "  @playwright/mcp@${PLAYWRIGHT_VERSION}... "
 npx -y @playwright/mcp@${PLAYWRIGHT_VERSION} --help &>/dev/null 2>&1 && ok "cached" || ok "will cache on first use"
 
 # ─── Install Playwright browsers ─────────────────────────────────────────────
-step "[5/7] Playwright browsers"
+step "[6/8] Playwright browsers"
+
+# On headless Linux, Playwright needs system dependencies
+if [ "$PLATFORM" = "linux" ]; then
+  warn "installing Playwright system dependencies (may need sudo)..."
+  npx -y playwright@latest install-deps chromium 2>/dev/null || warn "could not auto-install deps — run: sudo npx playwright install-deps chromium"
+fi
 
 if npx -y @playwright/mcp@${PLAYWRIGHT_VERSION} --help 2>&1 | grep -q "version"; then
   ok "chromium available"
@@ -308,9 +413,9 @@ else
 fi
 
 # ─── Copy agents ──────────────────────────────────────────────────────────────
-step "[6/7] Installing agents"
+step "[7/8] Installing agents"
 
-mkdir -p ~/.gemini/agents
+mkdir -p "$HOME/.gemini/agents"
 
 for agent in investigator planner reviewer; do
   if [ -f "${SCRIPT_DIR}/agents/${agent}.md" ]; then
@@ -322,10 +427,10 @@ for agent in investigator planner reviewer; do
 done
 
 # ─── Final smoke test ────────────────────────────────────────────────────────
-step "[7/7] Smoke test"
+step "[8/8] Smoke test"
 
 echo "  launching gemini CLI (this takes ~15s)..."
-TOOLS=$(gemini --allowed-mcp-server-names hashline,context7,sequential-thinking,playwright -p "list every tool name, one per line, just the function name" -o text 2>/dev/null) || true
+TOOLS=$(gemini --allowed-mcp-server-names hashline,context7,sequential-thinking,playwright,docker -p "list every tool name, one per line, just the function name" -o text 2>/dev/null) || true
 
 smoke_ok=true
 for agent in investigator planner reviewer; do
@@ -353,6 +458,14 @@ if [ "$smoke_ok" = true ]; then
 else
   echo -e "${YELLOW}${BOLD}Setup complete with warnings.${NC} Check the errors above."
 fi
+
+# Remind Linux users about the Docker MCP env var
+if [ "$PLATFORM" = "linux" ]; then
+  echo ""
+  echo -e "  ${YELLOW}Note:${NC} On Linux without Docker Desktop, add this to your shell profile:"
+  echo "    export DOCKER_MCP_IN_CONTAINER=1"
+fi
+
 echo ""
 echo "  Run 'gemini' in any project and try:"
 echo ""

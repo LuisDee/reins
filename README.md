@@ -44,14 +44,15 @@ That's it. The setup script will:
 
 ## Prerequisites
 
-- **macOS** with [Homebrew](https://brew.sh) (Linux support planned)
-- **Node.js** 18+ (`brew install node`)
-- **Docker Desktop** 4.48+ (for Docker MCP — [download](https://www.docker.com/products/docker-desktop))
+- **macOS** (Homebrew) or **Linux** (Ubuntu/Debian)
+- **Node.js** 18+ (macOS: `brew install node`, Linux: `sudo apt install nodejs npm`)
+- **Docker Engine** (macOS: [Docker Desktop](https://www.docker.com/products/docker-desktop), Linux: `sudo apt install docker.io`)
 - **Gemini CLI** (`npm install -g @google/gemini-cli`)
 
 The setup script will auto-install these if missing:
 - [Bun](https://bun.sh) (for Hashline MCP server)
 - [uv](https://docs.astral.sh/uv/) (for Serena LSP server)
+- [Docker MCP plugin](https://github.com/docker/mcp-gateway) (downloaded from GitHub releases, works with Docker Engine — no Docker Desktop required on Linux)
 
 ## Usage
 
