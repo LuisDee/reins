@@ -99,63 +99,171 @@ if [ "$errors" -gt 0 ]; then
   exit 1
 fi
 
-# ─── Generate settings.json ─────────────────────────────────────────────────
+# ─── Configure settings.json (merge, don't clobber) ─────────────────────────
 step "[3/7] Configuring settings.json"
 
 SETTINGS="$HOME/.gemini/settings.json"
+NPX_PATH="$(command -v npx)"
+BUNX_PATH="$(command -v bunx)"
+UVX_PATH="$(command -v uvx)"
 
-if [ -f "$SETTINGS" ]; then
-  ok "~/.gemini/settings.json already exists — validating"
+# Python script that merges reins config into existing settings.json.
+# - Preserves all existing user config (custom MCP servers, other keys)
+# - Only adds missing keys — never overwrites existing MCP server entries
+# - Creates fresh settings.json if none exists
+# - Backs up existing file before writing
+MERGE_RESULT=$(python3 - "$SETTINGS" "${SCRIPT_DIR}/settings.template.json" "$NPX_PATH" "$BUNX_PATH" "$UVX_PATH" <<'PYEOF'
+import json, sys, os, shutil
 
-  if python3 -m json.tool "$SETTINGS" &>/dev/null; then
-    ok "valid JSON"
-  else
-    fail "invalid JSON in settings.json — fix manually or delete to regenerate"
-    exit 1
-  fi
+settings_path = sys.argv[1]
+template_path = sys.argv[2]
+npx_path = sys.argv[3]
+bunx_path = sys.argv[4]
+uvx_path = sys.argv[5]
 
-  # Check required keys
-  valid=true
-  if ! python3 -c "import json; d=json.load(open('$SETTINGS')); assert d.get('subagents')" 2>/dev/null; then
-    fail "\"subagents\": true not set"
-    valid=false
-  fi
-  if ! python3 -c "import json; d=json.load(open('$SETTINGS')); assert d.get('experimental',{}).get('enableAgents')" 2>/dev/null; then
-    fail "\"experimental.enableAgents\": true not set"
-    valid=false
-  fi
+# Load template and resolve placeholders
+with open(template_path) as f:
+    template = json.load(f)
 
-  SERVERS=$(python3 -c "import json; d=json.load(open('$SETTINGS')); print(' '.join(d.get('mcpServers',{}).keys()))")
-  for srv in lsp hashline context7 sequential-thinking playwright; do
-    if echo "$SERVERS" | grep -qw "$srv"; then
-      ok "MCP server: $srv"
-    else
-      fail "MCP server '$srv' missing from settings.json"
-      valid=false
-    fi
-  done
+for server in template.get("mcpServers", {}).values():
+    cmd = server.get("command", "")
+    if cmd == "__NPX__":
+        server["command"] = npx_path
+    elif cmd == "__BUNX__":
+        server["command"] = bunx_path
+    elif cmd == "__UVX__":
+        server["command"] = uvx_path
 
-  if [ "$valid" = false ]; then
-    warn "settings.json exists but has issues — see errors above"
-    warn "delete ~/.gemini/settings.json and re-run setup.sh to regenerate"
-  fi
+# Load existing settings or start fresh
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path) as f:
+            settings = json.load(f)
+    except json.JSONDecodeError:
+        print("ERROR: existing settings.json is invalid JSON")
+        sys.exit(1)
+
+    # Back up before modifying
+    backup = settings_path + ".bak"
+    shutil.copy2(settings_path, backup)
+    print(f"BACKUP:{backup}")
+    created = False
+else:
+    settings = {}
+    created = True
+
+# Merge top-level flags
+if not settings.get("subagents"):
+    settings["subagents"] = True
+    print("ADDED:subagents: true")
+
+exp = settings.setdefault("experimental", {})
+if not exp.get("enableAgents"):
+    exp["enableAgents"] = True
+    print("ADDED:experimental.enableAgents: true")
+
+# Merge MCP servers — only add missing ones, never overwrite
+servers = settings.setdefault("mcpServers", {})
+for name, config in template.get("mcpServers", {}).items():
+    if name in servers:
+        print(f"KEPT:{name} (already configured)")
+    else:
+        servers[name] = config
+        print(f"ADDED:{name}")
+
+# Write result
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+if created:
+    print("STATUS:created")
+else:
+    print("STATUS:merged")
+PYEOF
+)
+
+# Parse the Python output and report results
+if [ $? -ne 0 ]; then
+  fail "failed to configure settings.json"
+  echo "$MERGE_RESULT"
+  exit 1
+fi
+
+# Report what happened
+status=""
+while IFS= read -r line; do
+  case "$line" in
+    STATUS:created)
+      ok "created ~/.gemini/settings.json"
+      status="created"
+      ;;
+    STATUS:merged)
+      ok "merged into existing ~/.gemini/settings.json"
+      status="merged"
+      ;;
+    BACKUP:*)
+      ok "backed up to ${line#BACKUP:}"
+      ;;
+    ADDED:*)
+      ok "added ${line#ADDED:}"
+      ;;
+    KEPT:*)
+      ok "${line#KEPT:}"
+      ;;
+    ERROR:*)
+      fail "${line#ERROR:}"
+      exit 1
+      ;;
+  esac
+done <<< "$MERGE_RESULT"
+
+ok "npx  = ${NPX_PATH}"
+ok "bunx = ${BUNX_PATH}"
+ok "uvx  = ${UVX_PATH}"
+
+# ─── Validate final settings.json ────────────────────────────────────────────
+VALID=$(python3 - "$SETTINGS" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    d = json.load(f)
+
+errors = []
+if not d.get("subagents"):
+    errors.append("subagents not set")
+if not d.get("experimental", {}).get("enableAgents"):
+    errors.append("experimental.enableAgents not set")
+
+required = ["lsp", "hashline", "context7", "sequential-thinking", "playwright"]
+servers = d.get("mcpServers", {})
+for s in required:
+    if s not in servers:
+        errors.append(f"MCP server '{s}' missing")
+    else:
+        cmd = servers[s].get("command", "")
+        if not cmd or cmd.startswith("__"):
+            errors.append(f"MCP server '{s}' has unresolved command path: {cmd}")
+
+if errors:
+    for e in errors:
+        print(f"FAIL:{e}")
+    sys.exit(1)
+else:
+    print("OK")
+PYEOF
+)
+
+if [ $? -ne 0 ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      FAIL:*) fail "${line#FAIL:}" ;;
+    esac
+  done <<< "$VALID"
+  fail "settings.json validation failed — see errors above"
+  exit 1
 else
-  ok "generating ~/.gemini/settings.json from template"
-
-  NPX_PATH="$(command -v npx)"
-  BUNX_PATH="$(command -v bunx)"
-  UVX_PATH="$(command -v uvx)"
-
-  sed \
-    -e "s|__NPX__|${NPX_PATH}|g" \
-    -e "s|__BUNX__|${BUNX_PATH}|g" \
-    -e "s|__UVX__|${UVX_PATH}|g" \
-    "${SCRIPT_DIR}/settings.template.json" > "$SETTINGS"
-
-  ok "wrote ~/.gemini/settings.json"
-  ok "  npx  = ${NPX_PATH}"
-  ok "  bunx = ${BUNX_PATH}"
-  ok "  uvx  = ${UVX_PATH}"
+  ok "settings.json validated"
 fi
 
 # ─── Pre-cache MCP servers ───────────────────────────────────────────────────

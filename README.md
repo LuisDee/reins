@@ -36,10 +36,10 @@ bash setup.sh
 That's it. The setup script will:
 
 1. Check prerequisites (node, bun, uv, gemini CLI) and install missing ones via Homebrew
-2. Pre-cache all MCP servers so first launch is fast
-3. Install Playwright's Chromium for browser-based review
-4. Copy agent definitions to `~/.gemini/agents/`
-5. Generate `~/.gemini/settings.json` from the template (or validate an existing one)
+2. Merge MCP server configs into your existing `~/.gemini/settings.json` (or create one from scratch if none exists). Your existing servers and settings are preserved — reins only adds what's missing.
+3. Pre-cache all MCP servers so first launch is fast
+4. Install Playwright's Chromium for browser-based review
+5. Copy agent definitions to `~/.gemini/agents/`
 6. Run a smoke test to confirm everything loads
 
 ## Prerequisites
