@@ -1,0 +1,2 @@
+description = "Show the current bugboard status"
+prompt = "@bug-board Show the current bugboard status"

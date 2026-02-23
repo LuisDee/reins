@@ -1,0 +1,2 @@
+description = "Close and archive a bug by ID"
+prompt = "@bug-board Close bug {{args}}"

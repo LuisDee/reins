@@ -30,6 +30,10 @@
       "command": "__BUNX__",
       "args": ["mcp-hashline-edit-server@0.2.0"]
     },
+    "fileops": {
+      "command": "__NODE__",
+      "args": ["__EXTENSION_DIR__/scripts/fileops-mcp.mjs"]
+    },
     "context7": {
       "command": "__NPX__",
       "args": ["-y", "@upstash/context7-mcp@2.1.1"]

@@ -1,0 +1,2 @@
+description = "Create a new bug entry, auto-investigate, and auto-plan"
+prompt = "@bug-board Create a new bug from this description: {{args}}"

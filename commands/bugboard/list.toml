@@ -1,0 +1,2 @@
+description = "List bugs with optional filter (status, priority)"
+prompt = "@bug-board List bugs matching: {{args}}"

@@ -1,0 +1,7 @@
+{
+  "auto_investigate": true,
+  "auto_plan": true,
+  "default_priority": "P3",
+  "id_prefix": "BUG",
+  "id_digits": 4
+}

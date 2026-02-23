@@ -7,6 +7,10 @@ This extension provides three specialised subagents for structured development:
 - **investigator** — Deep investigation and root cause analysis. Read-only. Uses Docker MCP for container logs/state. Use when debugging errors, tracing bugs, or understanding how code works.
 - **planner** — Creates TDD implementation plans with spec and plan files. Read-only (writes only to .gemini/plans/). Use after investigation or for new features.
 - **reviewer** — Reviews implementation against spec and plan. Validates via browser automation (Playwright) and container inspection (Docker MCP). Read-only except for browser/container interaction.
+- **bug-board** — Ambient bug tracking. Creates `.bugboard/` entries, investigates root cause,
+  writes implementation plans. Self-contained. Use for: "file a bug", "@bug-board <description>",
+  "bugboard status". After bug-board returns, save its `complete_task` result — the agent handles
+  all file writes to `.bugboard/` internally.
 
 ## Workflow
 

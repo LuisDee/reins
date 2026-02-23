@@ -1,0 +1,12 @@
+{
+  "id": "BUG-XXXX",
+  "title": "",
+  "status": "new",
+  "priority": "P3",
+  "created_at": "",
+  "updated_at": "",
+  "investigation": { "status": "pending" },
+  "plan": { "status": "pending" },
+  "resolved_at": null,
+  "resolution_commit": null
+}

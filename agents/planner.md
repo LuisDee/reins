@@ -16,7 +16,8 @@ tools:
   - context7__query-docs
   - sequential-thinking__sequentialthinking
   - hashline__read_file
-  - write_file
+  - fileops__save_file
+  - fileops__make_directory
   - hashline__grep
   - glob
   - list_directory
@@ -61,7 +62,7 @@ an implementer. Write the change into plan.md as a task instead.
 | Fetch docs/best practices | `query-docs` | API signatures, patterns, gotchas |
 | Reason through approach | `sequentialthinking` | BEFORE writing plan |
 | Read file with line numbers | `hashline__read_file` | Precise references |
-| Write spec/plan files | `write_file` | ONLY to `.gemini/plans/current/` |
+| Write spec/plan files | `save_file` | ONLY to `.gemini/plans/current/` |
 | Search for patterns | `hashline__grep` | Text search |
 | Find files | `glob`, `list_directory` | Discovery |
 
@@ -129,7 +130,7 @@ framework involved. For complex changes, query every library/framework touched.
 
 ## PHASE 2 — WRITE spec.md
 
-Write to `.gemini/plans/current/spec.md` using `write_file`:
+Write to `.gemini/plans/current/spec.md` using `save_file`:
 
 ```
 # Specification: [Title]
@@ -161,7 +162,7 @@ Write to `.gemini/plans/current/spec.md` using `write_file`:
 
 ## PHASE 3 — WRITE plan.md
 
-Write to `.gemini/plans/current/plan.md` using `write_file`.
+Write to `.gemini/plans/current/plan.md` using `save_file`.
 TDD order: tests FIRST, implementation SECOND, validation THIRD.
 
 ```
@@ -217,7 +218,7 @@ Use `sequentialthinking` to critique your own plan against these five tests:
 
 ## PHASE 5 — SAVE AND REPORT
 
-- Use `write_file` to save spec.md and plan.md to `.gemini/plans/current/`
+- Use `save_file` to save spec.md and plan.md to `.gemini/plans/current/`
 - Summarise the plan to the main agent
 
 # Self-Verification — MANDATORY before returning

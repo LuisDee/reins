@@ -213,13 +213,14 @@ NPX_PATH="$(command -v npx)"
 BUNX_PATH="$(command -v bunx)"
 UVX_PATH="$(command -v uvx)"
 DOCKER_PATH="$(command -v docker)"
+NODE_PATH="$(command -v node)"
 
 # Python script that merges reins config into existing settings.json.
 # - Preserves all existing user config (custom MCP servers, other keys)
 # - Only adds missing keys — never overwrites existing MCP server entries
 # - Creates fresh settings.json if none exists
 # - Backs up existing file before writing
-MERGE_RESULT=$(python3 - "$SETTINGS" "${SCRIPT_DIR}/settings.template.json" "$NPX_PATH" "$BUNX_PATH" "$UVX_PATH" "$DOCKER_PATH" <<'PYEOF'
+MERGE_RESULT=$(python3 - "$SETTINGS" "${SCRIPT_DIR}/settings.template.json" "$NPX_PATH" "$BUNX_PATH" "$UVX_PATH" "$DOCKER_PATH" "$NODE_PATH" "$SCRIPT_DIR" <<'PYEOF'
 import json, sys, os, shutil
 
 settings_path = sys.argv[1]
@@ -228,6 +229,8 @@ npx_path = sys.argv[3]
 bunx_path = sys.argv[4]
 uvx_path = sys.argv[5]
 docker_path = sys.argv[6]
+node_path = sys.argv[7]
+extension_dir = sys.argv[8]
 
 # Load template and resolve placeholders
 with open(template_path) as f:
@@ -238,12 +241,22 @@ placeholders = {
     "__BUNX__": bunx_path,
     "__UVX__": uvx_path,
     "__DOCKER__": docker_path,
+    "__NODE__": node_path,
+}
+
+arg_placeholders = {
+    "__EXTENSION_DIR__": extension_dir,
 }
 
 for server in template.get("mcpServers", {}).values():
     cmd = server.get("command", "")
     if cmd in placeholders:
         server["command"] = placeholders[cmd]
+    args = server.get("args", [])
+    for i, arg in enumerate(args):
+        for ph, val in arg_placeholders.items():
+            if ph in arg:
+                args[i] = arg.replace(ph, val)
 
 # Load existing settings or start fresh
 if os.path.exists(settings_path):
@@ -333,6 +346,7 @@ ok "npx    = ${NPX_PATH}"
 ok "bunx   = ${BUNX_PATH}"
 ok "uvx    = ${UVX_PATH}"
 ok "docker = ${DOCKER_PATH}"
+ok "node   = ${NODE_PATH}"
 
 # ─── Validate final settings.json ────────────────────────────────────────────
 VALID=$(python3 - "$SETTINGS" <<'PYEOF'
@@ -347,7 +361,7 @@ if not d.get("subagents"):
 if not d.get("experimental", {}).get("enableAgents"):
     errors.append("experimental.enableAgents not set")
 
-required = ["lsp", "hashline", "context7", "sequential-thinking", "playwright", "docker"]
+required = ["lsp", "hashline", "fileops", "context7", "sequential-thinking", "playwright", "docker"]
 servers = d.get("mcpServers", {})
 for s in required:
     if s not in servers:
@@ -417,7 +431,7 @@ step "[7/8] Installing agents"
 
 mkdir -p "$HOME/.gemini/agents"
 
-for agent in investigator planner reviewer; do
+for agent in investigator planner reviewer bug-board; do
   if [ -f "${SCRIPT_DIR}/agents/${agent}.md" ]; then
     cp "${SCRIPT_DIR}/agents/${agent}.md" "$HOME/.gemini/agents/${agent}.md"
     ok "${agent}"
@@ -433,7 +447,7 @@ echo "  launching gemini CLI (this takes ~15s)..."
 TOOLS=$(gemini --allowed-mcp-server-names hashline,context7,sequential-thinking,playwright,docker -p "list every tool name, one per line, just the function name" -o text 2>/dev/null) || true
 
 smoke_ok=true
-for agent in investigator planner reviewer; do
+for agent in investigator planner reviewer bug-board; do
   if echo "$TOOLS" | grep -qw "$agent"; then
     ok "agent loaded: $agent"
   else
